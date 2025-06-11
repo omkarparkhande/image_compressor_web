@@ -4,6 +4,7 @@ import os
 import requests
 import re
 import uuid
+import zipfile
 from PIL import Image
 
 app = Flask(__name__)
@@ -11,12 +12,14 @@ app = Flask(__name__)
 # Configuration
 UPLOAD_FOLDER = 'uploads'
 OUTPUT_FOLDER = 'compressed'
+ZIP_FOLDER = 'zips'
 MAX_SIZE = 100352  # 98 KB
 DEBUG = True
 
-# Ensure upload and output folders exist
+# Ensure folders exist
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(OUTPUT_FOLDER, exist_ok=True)
+os.makedirs(ZIP_FOLDER, exist_ok=True)
 
 def compress_image(image, output_path, max_size=MAX_SIZE):
     try:
@@ -27,13 +30,14 @@ def compress_image(image, output_path, max_size=MAX_SIZE):
         if DEBUG:
             print(f"Attempting to save to: {output_path}")
 
-        # Pre-resize the image to a maximum dimension of 1920 pixels
-        max_dim = 1920
-        if image.width > max_dim or image.height > max_dim:
-            ratio = min(max_dim / image.width, max_dim / image.height)
-            new_width = int(image.width * ratio)
+        # Resize image if width exceeds 1200 pixels
+        max_width = 1200
+        if image.width > max_width:
+            ratio = max_width / image.width
             new_height = int(image.height * ratio)
-            image = image.resize((new_width, new_height), Image.LANCZOS)
+            image = image.resize((max_width, new_height), Image.LANCZOS)
+            if DEBUG:
+                print(f"Resized image to width {max_width}x{new_height}")
 
         # Convert to RGB for JPEG compatibility (handles PNG and other formats)
         if image.mode != 'RGB':
@@ -203,6 +207,7 @@ def compress():
         results = []
         used_filenames = set()
         total_images = len(images)
+        successful_images = []  # Track successfully compressed images for ZIP
 
         for index, (image, custom_name) in enumerate(zip(images, names), 1):
             try:
@@ -227,12 +232,14 @@ def compress():
                     status_message = f"Compressed {os.path.basename(final_path)} ({size} bytes)"
                     if final_quality is not None and final_quality < 50:
                         status_message += f" (Warning: Low quality {final_quality} used)"
-                    results.append({
+                    result = {
                         'filename': os.path.basename(final_path),
                         'size': size,
                         'path': final_path,
                         'message': status_message
-                    })
+                    }
+                    results.append(result)
+                    successful_images.append(result)  # Add to ZIP candidates
                     if DEBUG:
                         print(f"Success: File saved to {final_path}")
                 else:
@@ -245,7 +252,25 @@ def compress():
                 if DEBUG:
                     print(f"Error: {str(e)}")
 
-        return jsonify({'results': results})
+        # Create ZIP file if more than one image was successfully compressed
+        zip_filename = None
+        if len(successful_images) > 1:
+            try:
+                zip_name = f"compressed_images_{uuid.uuid4().hex}.zip"
+                zip_path = os.path.join(ZIP_FOLDER, zip_name)
+                with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+                    for image in successful_images:
+                        zipf.write(image['path'], image['filename'])
+                if os.path.exists(zip_path):
+                    zip_filename = zip_name
+                    if DEBUG:
+                        print(f"Created ZIP file: {zip_path}")
+            except Exception as e:
+                if DEBUG:
+                    print(f"Error creating ZIP file: {str(e)}")
+                zip_filename = None
+
+        return jsonify({'results': results, 'zip_filename': zip_filename})
 
     except Exception as e:
         if DEBUG:
@@ -258,6 +283,13 @@ def download(filename):
     if os.path.exists(file_path):
         return send_file(file_path, as_attachment=True)
     return jsonify({'error': 'File not found'}), 404
+
+@app.route('/download_zip/<zip_filename>')
+def download_zip(zip_filename):
+    file_path = os.path.join(ZIP_FOLDER, zip_filename)
+    if os.path.exists(file_path):
+        return send_file(file_path, as_attachment=True, download_name='compressed_images.zip')
+    return jsonify({'error': 'ZIP file not found'}), 404
 
 if __name__ == '__main__':
     app.run(debug=DEBUG)

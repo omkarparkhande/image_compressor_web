@@ -1,5 +1,4 @@
-<xaiArtifact artifact_id="489db215-c6a7-4a50-8baa-c2d0a2e8bab3" artifact_version_id="951320af-38b8-4568-bb1e-c91b7e06ac87" title="index.html" contentType="text/html">
-```html
+<xaiArtifact artifact_id="489db215-c6a7-4a50-8baa-c2d0a2e8bab3" artifact_version_id="dba7c2c8-dbca-49df-bfb7-2d0ac1ef0867" title="index.html" contentType="text/html"></xaiArtifact>
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -61,15 +60,23 @@
                 }
 
                 status.innerHTML = 'Compression complete!';
-                data.results.forEach(result => {
+                if (data.zip_filename) {
+                    // Display ZIP download link for multiple images
                     const div = document.createElement('div');
-                    if (result.error) {
-                        div.innerHTML = `<p class="text-red-600">${result.error}</p>`;
-                    } else {
-                        div.innerHTML = `<p>${result.message} <a href="/download/${result.filename}" class="text-blue-600 underline" download>Download</a></p>`;
-                    }
+                    div.innerHTML = `<p>Download all compressed images: <a href="/download_zip/${data.zip_filename}" class="text-blue-600 underline" download>compressed_images.zip</a></p>`;
                     results.appendChild(div);
-                });
+                } else {
+                    // Display individual download links
+                    data.results.forEach(result => {
+                        const div = document.createElement('div');
+                        if (result.error) {
+                            div.innerHTML = `<p class="text-red-600">${result.error}</p>`;
+                        } else {
+                            div.innerHTML = `<p>${result.message} <a href="/download/${result.filename}" class="text-blue-600 underline" download>Download</a></p>`;
+                        }
+                        results.appendChild(div);
+                    });
+                }
             } catch (e) {
                 status.innerHTML = `Error: ${e.message}`;
             }
